@@ -3419,7 +3419,9 @@ var Grid = fc.Grid = RowRenderer.extend({
 	// Renders a mock event over the given range
 	renderRangeHelper: function(range, sourceSeg) {
 		var fakeEvent = this.fabricateHelperEvent(range, sourceSeg);
-
+		if (range.source) {
+			fakeEvent.source = range.source;
+		}
 		this.renderHelper(fakeEvent, sourceSeg); // do the actual rendering
 	},
 
@@ -5900,9 +5902,13 @@ var TimeGrid = Grid.extend({
 	helperEl: null, // cell skeleton element for rendering the mock event "helper"
 
 	businessHourSegs: null,
+	separateSources: false,
 
 
-	constructor: function() {
+	constructor: function(obj, separateSources) {
+		if (separateSources) {
+			this.separateSources = true;
+		}
 		Grid.apply(this, arguments); // call the super-constructor
 		this.processOptions();
 	},
@@ -6087,8 +6093,15 @@ var TimeGrid = Grid.extend({
 			colDates.reverse();
 		}
 
-		this.colDates = colDates;
+		if (this.separateSources) {
+			var cd = colDates;
+			for (var i=1; i < this.view.calendar.sources.length-1; i++) {
+				cd = cd.concat(colDates);
+			}
+			colDates = cd;
+		}
 		this.colCnt = colDates.length;
+		this.colDates = colDates;
 		this.rowCnt = Math.ceil((this.maxTime - this.minTime) / this.snapDuration); // # of vertical snaps
 	},
 
@@ -6129,23 +6142,39 @@ var TimeGrid = Grid.extend({
 		var col;
 		var colDate;
 		var colRange;
+		var source, sourceCnt=1;
 
 		// normalize :(
 		range = {
 			start: range.start.clone().stripZone(),
-			end: range.end.clone().stripZone()
+			end: range.end.clone().stripZone(),
+			event: range.event
 		};
 
-		for (col = 0; col < colCnt; col++) {
-			colDate = this.colDates[col]; // will be ambig time/timezone
-			colRange = {
-				start: colDate.clone().time(this.minTime),
-				end: colDate.clone().time(this.maxTime)
-			};
-			seg = intersectionToSeg(range, colRange); // both will be ambig timezone
-			if (seg) {
-				seg.col = col;
-				segs.push(seg);
+		if (this.separateSources) {
+			sourceCnt = (this.view.calendar.sources.length-1);
+			colCnt /= sourceCnt;
+		}
+
+		for (source = 0; source < sourceCnt; source++) {
+			for (col = source*colCnt; col < (source+1)*colCnt; col++) {
+				if (this.separateSources && range.event.source && range.event.source !== this.view.calendar.sources[source+1]) {
+					continue;
+				}
+				if (!range.event.source) {
+					console.log(range.event);
+				}
+				colDate = this.colDates[col]; // will be ambig time/timezone
+				colRange = {
+					start: colDate.clone().time(this.minTime),
+					end: colDate.clone().time(this.maxTime)
+				};
+				seg = intersectionToSeg(range, colRange); // both will be ambig timezone
+				if (seg) {
+					seg.col = col;
+					segs.push(seg);
+				}
+
 			}
 		}
 
@@ -6245,6 +6274,20 @@ var TimeGrid = Grid.extend({
 	/* Event Drag Visualization
 	------------------------------------------------------------------------------------------------------------------*/
 
+	// Given the first and last cells of a selection, returns a range object.
+	// Will return something falsy if the selection is invalid (when outside of selectionConstraint for example).
+	// Subclasses can override and provide additional data in the range object. Will be passed to renderSelection().
+	computeSelection: function(firstCell, lastCell) {
+		var selection = Grid.prototype.computeSelection.call(this, firstCell, lastCell);
+		if (this.separateSources) {
+			var sources = this.view.calendar.sources;
+			if (sources[firstCell.col+1] !== sources[lastCell.col+1]) {
+				return null;
+			}
+			selection.source = sources[firstCell.col+1];
+		}
+		return selection;
+	},
 
 	// Renders a visual indication of an event being dragged over the specified date(s).
 	// dropLocation's end might be null, as well as `seg`. See Grid::renderDrag for more info.
@@ -6408,6 +6451,26 @@ var TimeGrid = Grid.extend({
 		}
 
 		return segs;
+	},
+
+	rowHtml: function(rowType, row) {
+		if (!this.separateSources || rowType !== 'head') {
+			return Grid.prototype.rowHtml.call(this, rowType, row);
+		}
+
+		var rowCellHtml = '';
+		var sources = this.view.calendar.sources;
+		for (var source = 1; source < sources.length; source++) {
+			var cell = '<th>unbekannt</th>';
+			if (sources[source].name) {
+				cell = '<th>'+sources[source].name+'</th>';
+			}
+			rowCellHtml += cell;
+		}
+
+		rowCellHtml = this.bookendCells(rowCellHtml, rowType, row); // apply intro and outro
+
+		return '<tr>' + rowCellHtml + '</tr>';
 	}
 
 });
@@ -7635,7 +7698,7 @@ var View = fc.View = Class.extend({
 
 	// Triggers handlers to 'select'
 	triggerSelect: function(range, ev) {
-		this.trigger('select', null, range.start, range.end, ev);
+		this.trigger('select', null, range.start, range.end, range.source, ev);
 	},
 
 
@@ -8339,11 +8402,11 @@ function Calendar_constructor(element, overrides) {
 
 	// Renders a view because of a date change, view-type change, or for the first time.
 	// If not given a viewType, keep the current view but render different dates.
-	function renderView(viewType) {
+	function renderView(viewType, force) {
 		ignoreWindowResize++;
-
+		
 		// if viewType is changing, remove the old view's rendering
-		if (currentView && viewType && currentView.type !== viewType) {
+		if (currentView && viewType && (currentView.type !== viewType || force)) {
 			header.deactivateButton(currentView.type);
 			freezeContentHeight(); // prevent a scroll jump when view element is removed
 			currentView.removeElement();
@@ -9305,7 +9368,7 @@ function EventManager(options) { // assumed to be a calendar
 			}
 		}
 	);
-	
+	t.sources = sources;
 	
 	
 	/* Fetching
@@ -9489,6 +9552,7 @@ function EventManager(options) { // assumed to be a calendar
 		var source = buildEventSource(sourceInput);
 		if (source) {
 			sources.push(source);
+			t.sources = sources;
 			pendingSourceCnt++;
 			fetchEventSource(source, currentFetchID); // will eventually call reportEvents
 		}
@@ -9549,6 +9613,7 @@ function EventManager(options) { // assumed to be a calendar
 			return !isSourcesEqual(e.source, source);
 		});
 		reportEvents(cache);
+		t.sources = sources;
 	}
 
 
@@ -10770,7 +10835,7 @@ var AgendaView = View.extend({
 
 
 	initialize: function() {
-		this.timeGrid = new TimeGrid(this);
+		this.timeGrid = new TimeGrid(this, this.options.separateSources);
 
 		if (this.opt('allDaySlot')) { // should we display the "all-day" area?
 			this.dayGrid = new DayGrid(this); // the all-day subcomponent of this view
@@ -11157,6 +11222,14 @@ fcViews.agenda = {
 
 fcViews.agendaDay = {
 	type: 'agenda',
+	duration: { days: 1 }
+};
+
+fcViews.agendaResource = {
+	type: 'agenda',
+	defaults: {
+		separateSources: true,
+	},
 	duration: { days: 1 }
 };
 

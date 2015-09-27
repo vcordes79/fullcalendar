@@ -51,7 +51,7 @@ function EventManager(options) { // assumed to be a calendar
 			}
 		}
 	);
-	
+	t.sources = sources;
 	
 	
 	/* Fetching
@@ -235,6 +235,7 @@ function EventManager(options) { // assumed to be a calendar
 		var source = buildEventSource(sourceInput);
 		if (source) {
 			sources.push(source);
+			t.sources = sources;
 			pendingSourceCnt++;
 			fetchEventSource(source, currentFetchID); // will eventually call reportEvents
 		}
@@ -295,6 +296,7 @@ function EventManager(options) { // assumed to be a calendar
 			return !isSourcesEqual(e.source, source);
 		});
 		reportEvents(cache);
+		t.sources = sources;
 	}
 
 

@@ -408,7 +408,9 @@ var Grid = fc.Grid = RowRenderer.extend({
 	// Renders a mock event over the given range
 	renderRangeHelper: function(range, sourceSeg) {
 		var fakeEvent = this.fabricateHelperEvent(range, sourceSeg);
-
+		if (range.source) {
+			fakeEvent.source = range.source;
+		}
 		this.renderHelper(fakeEvent, sourceSeg); // do the actual rendering
 	},
 

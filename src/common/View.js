@@ -800,7 +800,7 @@ var View = fc.View = Class.extend({
 
 	// Triggers handlers to 'select'
 	triggerSelect: function(range, ev) {
-		this.trigger('select', null, range.start, range.end, ev);
+		this.trigger('select', null, range.start, range.end, range.source, ev);
 	},
 
 

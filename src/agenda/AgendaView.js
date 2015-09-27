@@ -19,7 +19,7 @@ var AgendaView = View.extend({
 
 
 	initialize: function() {
-		this.timeGrid = new TimeGrid(this);
+		this.timeGrid = new TimeGrid(this, this.options.separateSources);
 
 		if (this.opt('allDaySlot')) { // should we display the "all-day" area?
 			this.dayGrid = new DayGrid(this); // the all-day subcomponent of this view

@@ -28,6 +28,14 @@ fcViews.agendaDay = {
 	duration: { days: 1 }
 };
 
+fcViews.agendaResource = {
+	type: 'agenda',
+	defaults: {
+		separateSources: true,
+	},
+	duration: { days: 1 }
+};
+
 fcViews.agendaWeek = {
 	type: 'agenda',
 	duration: { weeks: 1 }
